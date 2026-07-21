@@ -1,0 +1,506 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly INSTALL_DIR="/opt/relais"
+readonly DATA_DIR="${INSTALL_DIR}/data"
+readonly CONFIG_PATH="${INSTALL_DIR}/config.toml"
+readonly ENV_PATH="${INSTALL_DIR}/.env"
+readonly COMPOSE_PATH="${INSTALL_DIR}/compose.yml"
+
+readonly CONTAINER_UID="10001"
+readonly CONTAINER_GID="10001"
+
+readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/relais"
+readonly DEFAULT_IMAGE_VERSION="dev"
+readonly DEFAULT_RUST_LOG="info"
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+
+readonly CONFIG_SCRIPT="${SCRIPT_DIR}/create-config.sh"
+readonly COMPOSE_SOURCE="${PROJECT_DIR}/deploy/raspberry-pi/compose.yml"
+
+# Gibt eine Fehlermeldung aus und beendet das Skript.
+#
+# Parameter:
+#   $1: Fehlermeldung
+#
+# Rückgabewert:
+#   Beendet das Skript mit Exitcode 1.
+fail() {
+    echo "Fehler: $1" >&2
+    exit 1
+}
+
+# Prüft, ob das Skript mit Root-Rechten ausgeführt wird.
+#
+# Rückgabewert:
+#   0, wenn das Skript als root ausgeführt wird.
+require_root() {
+    if [[ "${EUID}" -ne 0 ]]; then
+        fail "Bitte dieses Skript mit sudo ausführen."
+    fi
+}
+
+# Prüft, ob ein benötigter Befehl installiert ist.
+#
+# Parameter:
+#   $1: Name des Befehls
+#
+# Rückgabewert:
+#   0, wenn der Befehl vorhanden ist.
+require_command() {
+    local command_name="$1"
+
+    if ! command -v "${command_name}" >/dev/null 2>&1; then
+        fail "Benötigter Befehl fehlt: ${command_name}"
+    fi
+}
+
+# Prüft, ob eine benötigte Datei vorhanden ist.
+#
+# Parameter:
+#   $1: Dateipfad
+#
+# Rückgabewert:
+#   0, wenn die Datei vorhanden ist.
+require_file() {
+    local file_path="$1"
+
+    if [[ ! -f "${file_path}" ]]; then
+        fail "Benötigte Datei fehlt: ${file_path}"
+    fi
+}
+
+# Liest den Wert einer Variablen aus einer .env-Datei.
+#
+# Parameter:
+#   $1: Variablenname
+#   $2: Pfad zur .env-Datei
+#
+# Ausgabe:
+#   Wert der Variable oder eine leere Ausgabe.
+read_env_value() {
+    local variable_name="$1"
+    local env_file="$2"
+
+    if [[ ! -f "${env_file}" ]]; then
+        return 0
+    fi
+
+    grep -E "^${variable_name}=" "${env_file}" |
+        tail -n 1 |
+        cut -d= -f2- || true
+}
+
+# Erkennt ein angeschlossenes serielles GPS-Gerät.
+#
+# Bevorzugt wird ein stabiler Pfad unter /dev/serial/by-id.
+#
+# Ausgabe:
+#   Pfad zum GPS-Gerät oder /dev/ttyUSB0 als Fallback.
+detect_gps_device() {
+    local device=""
+
+    if [[ -d /dev/serial/by-id ]]; then
+        device="$(
+            find /dev/serial/by-id \
+                -maxdepth 1 \
+                -type l \
+                -print \
+                -quit \
+                2>/dev/null || true
+        )"
+    fi
+
+    if [[ -z "${device}" ]]; then
+        device="$(
+            find /dev \
+                -maxdepth 1 \
+                \( -name 'ttyUSB*' -o -name 'ttyACM*' \) \
+                -print \
+                -quit \
+                2>/dev/null || true
+        )"
+    fi
+
+    printf '%s' "${device:-/dev/ttyUSB0}"
+}
+
+# Ermittelt die numerische Gruppen-ID von dialout.
+#
+# Ausgabe:
+#   Gruppen-ID von dialout oder 20 als Fallback.
+detect_dialout_gid() {
+    local gid=""
+
+    gid="$(
+        getent group dialout 2>/dev/null |
+            cut -d: -f3 || true
+    )"
+
+    printf '%s' "${gid:-20}"
+}
+
+# Erstellt die Installationsverzeichnisse und setzt die Berechtigungen.
+#
+# /opt/relais bleibt root-owned.
+# /opt/relais/data gehört dem Containerbenutzer mit UID 10001.
+#
+# Ausgabe:
+#   Erstellt beziehungsweise repariert die Verzeichnisse.
+prepare_directories() {
+    install \
+        --directory \
+        --mode 0755 \
+        --owner root \
+        --group root \
+        "${INSTALL_DIR}"
+
+    install \
+        --directory \
+        --mode 0750 \
+        --owner "${CONTAINER_UID}" \
+        --group "${CONTAINER_GID}" \
+        "${DATA_DIR}"
+
+    chown -R \
+        "${CONTAINER_UID}:${CONTAINER_GID}" \
+        "${DATA_DIR}"
+
+    find "${DATA_DIR}" \
+        -type d \
+        -exec chmod 0750 {} +
+
+    find "${DATA_DIR}" \
+        -type f \
+        -exec chmod 0640 {} +
+}
+
+# Kopiert die Compose-Datei in das Installationsverzeichnis.
+#
+# Ausgabe:
+#   Erstellt oder überschreibt /opt/relais/compose.yml.
+install_compose_file() {
+    install \
+        --mode 0644 \
+        --owner root \
+        --group root \
+        "${COMPOSE_SOURCE}" \
+        "${COMPOSE_PATH}"
+
+    echo "Compose-Datei installiert:"
+    echo "  ${COMPOSE_PATH}"
+}
+
+# Erstellt die config.toml, sofern noch keine gültige Datei vorhanden ist.
+#
+# Die Datei wird root-owned, aber für den Container lesbar gesetzt.
+#
+# Ausgabe:
+#   Erstellt oder übernimmt /opt/relais/config.toml.
+prepare_config_file() {
+    if [[ -s "${CONFIG_PATH}" ]]; then
+        echo "Bestehende Konfiguration wird verwendet:"
+        echo "  ${CONFIG_PATH}"
+    else
+        chmod +x "${CONFIG_SCRIPT}"
+
+        "${CONFIG_SCRIPT}" \
+            --config-path "${CONFIG_PATH}" \
+            --database-path "data/positions.db"
+
+        if [[ ! -s "${CONFIG_PATH}" ]]; then
+            fail "Die Konfigurationsdatei wurde nicht korrekt erstellt."
+        fi
+    fi
+
+    chown root:root "${CONFIG_PATH}"
+    chmod 0644 "${CONFIG_PATH}"
+}
+
+# Prüft, ob die vorhandene .env alle benötigten Werte enthält.
+#
+# Rückgabewert:
+#   0, wenn alle benötigten Variablen vorhanden sind.
+#   1, wenn die Datei fehlt oder unvollständig ist.
+env_file_is_compatible() {
+    local required_variables=(
+        "RELAIS_IMAGE_REPOSITORY"
+        "RELAIS_VERSION"
+        "DEVICE_REGISTRATION_TOKEN"
+        "GPS_DEVICE"
+        "DIALOUT_GID"
+    )
+
+    local variable_name
+    local variable_value
+
+    if [[ ! -s "${ENV_PATH}" ]]; then
+        return 1
+    fi
+
+    for variable_name in "${required_variables[@]}"; do
+        variable_value="$(
+            read_env_value "${variable_name}" "${ENV_PATH}"
+        )"
+
+        if [[ -z "${variable_value}" ]]; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+# Erzeugt eine neue Laufzeit-.env für Docker Compose.
+#
+# Abgefragt werden:
+#   - Image-Repository
+#   - Image-Version
+#   - GPS-Gerät
+#   - Registrierungs-Token
+#
+# Ausgabe:
+#   Erstellt /opt/relais/.env mit Berechtigung 0600.
+create_env_file() {
+    local image_repository="${DEFAULT_IMAGE_REPOSITORY}"
+    local image_version="${DEFAULT_IMAGE_VERSION}"
+    local gps_device
+    local dialout_gid
+    local registration_token=""
+    local entered_value=""
+
+    gps_device="$(detect_gps_device)"
+    dialout_gid="$(detect_dialout_gid)"
+
+    echo
+    echo "Container-Konfiguration"
+    echo "======================="
+
+    read -r \
+        -p "Image-Repository [${image_repository}]: " \
+        entered_value
+
+    image_repository="${entered_value:-${image_repository}}"
+
+    entered_value=""
+
+    read -r \
+        -p "Image-Version [${image_version}]: " \
+        entered_value
+
+    image_version="${entered_value:-${image_version}}"
+
+    entered_value=""
+
+    echo
+    echo "GPS-Gerät gefunden:"
+    echo "  ${gps_device}"
+
+    read -r \
+        -p "GPS-Gerät [${gps_device}]: " \
+        entered_value
+
+    gps_device="${entered_value:-${gps_device}}"
+
+    echo
+
+    read -r \
+        -s \
+        -p "DEVICE_REGISTRATION_TOKEN: " \
+        registration_token
+
+    echo
+
+    if [[ -z "${registration_token}" ]]; then
+        fail "DEVICE_REGISTRATION_TOKEN darf nicht leer sein."
+    fi
+
+    cat > "${ENV_PATH}" <<EOF
+RELAIS_IMAGE_REPOSITORY=${image_repository}
+RELAIS_VERSION=${image_version}
+DEVICE_REGISTRATION_TOKEN=${registration_token}
+GPS_DEVICE=${gps_device}
+DIALOUT_GID=${dialout_gid}
+RUST_LOG=${DEFAULT_RUST_LOG}
+EOF
+
+    chown root:root "${ENV_PATH}"
+    chmod 0600 "${ENV_PATH}"
+
+    echo
+    echo "Umgebungsdatei erstellt:"
+    echo "  ${ENV_PATH}"
+}
+
+# Erstellt eine neue .env, wenn die vorhandene Datei inkompatibel ist.
+#
+# Eine inkompatible Datei wird vor dem Überschreiben mit Zeitstempel
+# gesichert.
+#
+# Ausgabe:
+#   Erstellt oder übernimmt /opt/relais/.env.
+prepare_env_file() {
+    local backup_path
+
+    if env_file_is_compatible; then
+        echo "Bestehende Umgebungsdatei wird verwendet:"
+        echo "  ${ENV_PATH}"
+
+        chown root:root "${ENV_PATH}"
+        chmod 0600 "${ENV_PATH}"
+
+        return
+    fi
+
+    if [[ -e "${ENV_PATH}" ]]; then
+        backup_path="${ENV_PATH}.invalid.$(date +%Y%m%d-%H%M%S)"
+
+        cp \
+            --preserve=mode \
+            "${ENV_PATH}" \
+            "${backup_path}"
+
+        echo "Inkompatible Umgebungsdatei wurde gesichert:"
+        echo "  ${backup_path}"
+    fi
+
+    create_env_file
+}
+
+# Prüft, ob der in der .env konfigurierte GPS-Gerätepfad existiert.
+#
+# Rückgabewert:
+#   0, wenn das Gerät existiert.
+#   Beendet das Skript andernfalls mit einer Fehlermeldung.
+verify_gps_device() {
+    local gps_device
+
+    gps_device="$(read_env_value "GPS_DEVICE" "${ENV_PATH}")"
+
+    if [[ ! -e "${gps_device}" ]]; then
+        fail "GPS-Gerät existiert nicht: ${gps_device}"
+    fi
+
+    echo "GPS-Gerät:"
+    echo "  ${gps_device}"
+}
+
+# Prüft die Docker-Compose-Konfiguration.
+#
+# Rückgabewert:
+#   0, wenn Compose die Konfiguration erfolgreich auflösen kann.
+validate_compose_configuration() {
+    docker compose \
+        --env-file "${ENV_PATH}" \
+        --file "${COMPOSE_PATH}" \
+        config \
+        --quiet
+}
+
+# Lädt das konfigurierte Relais-Image aus GHCR.
+#
+# Rückgabewert:
+#   0, wenn das Image geladen wurde.
+pull_container_image() {
+    docker compose \
+        --env-file "${ENV_PATH}" \
+        --file "${COMPOSE_PATH}" \
+        pull \
+        relais
+}
+
+# Startet oder aktualisiert den Relais-Container.
+#
+# Der Container wird bei Bedarf neu erstellt. Persistente Dateien unter
+# /opt/relais/data bleiben erhalten.
+#
+# Rückgabewert:
+#   0, wenn der Container erfolgreich gestartet wurde.
+start_container() {
+    docker compose \
+        --env-file "${ENV_PATH}" \
+        --file "${COMPOSE_PATH}" \
+        up \
+        --detach \
+        --remove-orphans \
+        --force-recreate \
+        relais
+}
+
+# Zeigt den aktuellen Compose-Status an.
+#
+# Ausgabe:
+#   Status des Relais-Containers.
+show_status() {
+    docker compose \
+        --env-file "${ENV_PATH}" \
+        --file "${COMPOSE_PATH}" \
+        ps
+}
+
+# Führt die vollständige Relais-Installation aus.
+#
+# Ablauf:
+#   1. Voraussetzungen prüfen
+#   2. Verzeichnisse und Dateirechte vorbereiten
+#   3. Compose-Datei kopieren
+#   4. Konfiguration vorbereiten
+#   5. .env vorbereiten
+#   6. GPS-Gerät prüfen
+#   7. Compose-Konfiguration validieren
+#   8. Image laden
+#   9. Container starten
+main() {
+    require_root
+    require_command "docker"
+    require_command "find"
+    require_command "getent"
+
+    if ! docker compose version >/dev/null 2>&1; then
+        fail "Docker Compose Plugin fehlt. Zuerst bootstrap.sh ausführen."
+    fi
+
+    require_file "${CONFIG_SCRIPT}"
+    require_file "${COMPOSE_SOURCE}"
+
+    prepare_directories
+    install_compose_file
+    prepare_config_file
+    prepare_env_file
+    verify_gps_device
+
+    echo
+    echo "Docker-Compose-Konfiguration wird geprüft ..."
+    validate_compose_configuration
+
+    echo "Container-Image wird geladen ..."
+    pull_container_image
+
+    echo "Relais-Container wird gestartet ..."
+    start_container
+
+    echo
+    show_status
+
+    echo
+    echo "Installation abgeschlossen."
+    echo
+    echo "Status anzeigen:"
+    echo "  sudo docker compose \\"
+    echo "    --env-file ${ENV_PATH} \\"
+    echo "    --file ${COMPOSE_PATH} \\"
+    echo "    ps"
+    echo
+    echo "Logs anzeigen:"
+    echo "  sudo docker logs --follow relais"
+    echo
+    echo "Anwendung stoppen:"
+    echo "  sudo docker compose \\"
+    echo "    --env-file ${ENV_PATH} \\"
+    echo "    --file ${COMPOSE_PATH} \\"
+    echo "    stop relais"
+}
+
+main "$@"
