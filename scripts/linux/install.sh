@@ -19,6 +19,7 @@ PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 readonly CONFIG_SCRIPT="${SCRIPT_DIR}/create-config.sh"
 readonly COMPOSE_SOURCE="${PROJECT_DIR}/deploy/raspberry-pi/compose.yml"
+readonly DESKTOP_SHORTCUT_SCRIPT="${SCRIPT_DIR}/create-desktop-shortcuts.sh"
 
 # Gibt eine Fehlermeldung aus und beendet das Skript.
 #
@@ -369,6 +370,22 @@ prepare_env_file() {
     create_env_file
 }
 
+# Erstellt Desktop-Starter für Update, Deinstallation und
+# Konfigurationsoberfläche.
+#
+# Ausgaben:
+#   Führt das Shortcut-Skript aus, sofern ein Desktop-Benutzer ermittelt
+#   werden kann.
+create_desktop_shortcuts() {
+    if [[ ! -x "${DESKTOP_SHORTCUT_SCRIPT}" ]]; then
+        echo "Hinweis: Desktop-Shortcut-Skript wurde nicht gefunden."
+        echo "Übersprungen: ${DESKTOP_SHORTCUT_SCRIPT}"
+        return
+    fi
+
+    "${DESKTOP_SHORTCUT_SCRIPT}"
+}
+
 # Prüft, ob der in der .env konfigurierte GPS-Gerätepfad existiert.
 #
 # Rückgabewert:
@@ -480,6 +497,9 @@ main() {
 
     echo "Relais-Container wird gestartet ..."
     start_container
+
+    echo "Desktop-Shortcuts werden erstellt ..."
+    create_desktop_shortcuts
 
     echo
     show_status

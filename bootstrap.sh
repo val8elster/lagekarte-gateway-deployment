@@ -16,6 +16,7 @@ readonly CREATE_CONFIG_SCRIPT="${INSTALLER_SCRIPT_DIR}/create-config.sh"
 readonly UPDATE_SCRIPT="${INSTALLER_SCRIPT_DIR}/update.sh"
 readonly UNINSTALL_SCRIPT="${INSTALLER_SCRIPT_DIR}/uninstall.sh"
 readonly COMPOSE_FILE="${INSTALLER_DEPLOY_DIR}/compose.yml"
+readonly DESKTOP_SHORTCUT_SCRIPT="${INSTALLER_SCRIPT_DIR}/create-desktop-shortcuts.sh"
 
 readonly REQUIRED_ARCHITECTURE="arm64"
 
@@ -379,6 +380,11 @@ download_deployment_files() {
         "deploy/raspberry-pi/compose.yml" \
         "${COMPOSE_FILE}" \
         "0644"
+
+    download_file \
+        "scripts/linux/create-desktop-shortcuts.sh" \
+        "${DESKTOP_SHORTCUT_SCRIPT}" \
+        "0755"
 }
 
 # Prüft, ob alle heruntergeladenen Dateien vorhanden und nicht leer sind.
@@ -393,6 +399,7 @@ verify_downloaded_files() {
         "${UPDATE_SCRIPT}"
         "${UNINSTALL_SCRIPT}"
         "${COMPOSE_FILE}"
+        "${DESKTOP_SHORTCUT_SCRIPT}"
     )
 
     local file_path
@@ -415,6 +422,7 @@ validate_downloaded_scripts() {
         "${CREATE_CONFIG_SCRIPT}"
         "${UPDATE_SCRIPT}"
         "${UNINSTALL_SCRIPT}"
+        "${DESKTOP_SHORTCUT_SCRIPT}"
     )
 
     local script_path
