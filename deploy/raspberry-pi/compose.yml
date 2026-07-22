@@ -10,6 +10,9 @@ services:
 
     working_dir: /app
 
+    ports:
+      - "8080:8080"
+
     volumes:
       - /opt/relais/config.toml:/app/config.toml:ro
       - /opt/relais/data:/app/data
