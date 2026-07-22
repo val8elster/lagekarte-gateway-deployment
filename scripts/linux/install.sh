@@ -14,6 +14,10 @@ readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/relais"
 readonly DEFAULT_IMAGE_VERSION="dev"
 readonly DEFAULT_RUST_LOG="info"
 
+readonly MINIMUM_ADMIN_PASSWORD_LENGTH="12"
+readonly ADMIN_PASSWORD_HASH_VARIABLE="RELAIS_ADMIN_PASSWORD_HASH"
+readonly SESSION_SECURE_VARIABLE="RELAIS_SESSION_SECURE"
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
@@ -75,6 +79,9 @@ require_file() {
 
 # Liest den Wert einer Variablen aus einer .env-Datei.
 #
+# Einfache oder doppelte Anführungszeichen am Anfang und Ende des Wertes
+# werden entfernt.
+#
 # Parameter:
 #   $1: Variablenname
 #   $2: Pfad zur .env-Datei
@@ -84,14 +91,27 @@ require_file() {
 read_env_value() {
     local variable_name="$1"
     local env_file="$2"
+    local value=""
 
     if [[ ! -f "${env_file}" ]]; then
         return 0
     fi
 
-    grep -E "^${variable_name}=" "${env_file}" |
-        tail -n 1 |
-        cut -d= -f2- || true
+    value="$(
+        grep -E "^${variable_name}=" "${env_file}" |
+            tail -n 1 |
+            cut -d= -f2- || true
+    )"
+
+    if [[ "${value}" == \'*\' ]] &&
+       [[ "${#value}" -ge 2 ]]; then
+        value="${value:1:${#value}-2}"
+    elif [[ "${value}" == \"*\" ]] &&
+         [[ "${#value}" -ge 2 ]]; then
+        value="${value:1:${#value}-2}"
+    fi
+
+    printf '%s' "${value}"
 }
 
 # Erkennt ein angeschlossenes serielles GPS-Gerät.
@@ -220,10 +240,144 @@ prepare_config_file() {
     chmod 0644 "${CONFIG_PATH}"
 }
 
+# Installiert die zum Erzeugen des Argon2id-Passworthashs benötigten
+# Systempakete, sofern sie noch nicht verfügbar sind.
+#
+# Ausgabe:
+#   Installiert bei Bedarf python3 und python3-argon2.
+ensure_password_hash_dependencies() {
+    if command -v python3 >/dev/null 2>&1 &&
+       python3 -c 'import argon2' >/dev/null 2>&1; then
+        return
+    fi
+
+    echo
+    echo "Abhängigkeiten für die Adminpasswort-Einrichtung werden installiert ..."
+
+    apt-get update
+
+    apt-get install \
+        --yes \
+        --no-install-recommends \
+        python3 \
+        python3-argon2
+
+    if ! python3 -c 'import argon2' >/dev/null 2>&1; then
+        fail "Das Python-Modul argon2 konnte nicht installiert werden."
+    fi
+}
+
+# Liest das Adminpasswort verdeckt ein und fordert eine Bestätigung an.
+#
+# Das Passwort muss mindestens zwölf Zeichen lang sein. Es wird nur
+# vorübergehend in der globalen Variable ADMIN_PASSWORD gehalten.
+#
+# Ausgabe:
+#   Setzt die globale Variable ADMIN_PASSWORD.
+read_admin_password() {
+    local password=""
+    local password_confirmation=""
+
+    while true; do
+        echo
+        echo "Adminpasswort für die Relais-Benutzeroberfläche"
+        echo "================================================"
+        echo "Das Passwort muss mindestens ${MINIMUM_ADMIN_PASSWORD_LENGTH} Zeichen lang sein."
+        echo
+
+        read \
+            -r \
+            -s \
+            -p "Adminpasswort: " \
+            password
+
+        echo
+
+        read \
+            -r \
+            -s \
+            -p "Adminpasswort wiederholen: " \
+            password_confirmation
+
+        echo
+
+        if [[ -z "${password}" ]]; then
+            echo "Das Adminpasswort darf nicht leer sein."
+            continue
+        fi
+
+        if [[ "${#password}" -lt "${MINIMUM_ADMIN_PASSWORD_LENGTH}" ]]; then
+            echo "Das Adminpasswort ist zu kurz."
+            continue
+        fi
+
+        if [[ "${password}" != "${password_confirmation}" ]]; then
+            echo "Die eingegebenen Passwörter stimmen nicht überein."
+            continue
+        fi
+
+        ADMIN_PASSWORD="${password}"
+
+        unset password
+        unset password_confirmation
+
+        return
+    done
+}
+
+# Erzeugt einen Argon2id-PHC-Hash aus einem Klartextpasswort.
+#
+# Parameter:
+#   $1: Klartextpasswort
+#
+# Ausgabe:
+#   Vollständiger Argon2id-PHC-Hash.
+generate_admin_password_hash() {
+    local password="$1"
+
+    ADMIN_PASSWORD_INPUT="${password}" \
+        python3 <<'PYTHON'
+import os
+
+from argon2 import PasswordHasher
+from argon2.low_level import Type
+
+password = os.environ["ADMIN_PASSWORD_INPUT"]
+
+password_hasher = PasswordHasher(
+    time_cost=2,
+    memory_cost=19456,
+    parallelism=1,
+    hash_len=32,
+    salt_len=16,
+    type=Type.ID,
+)
+
+print(password_hasher.hash(password))
+PYTHON
+}
+
+# Prüft, ob ein erzeugter Wert wie ein vollständiger Argon2id-PHC-Hash
+# aufgebaut ist.
+#
+# Parameter:
+#   $1: Zu prüfender Hash
+#
+# Rückgabewert:
+#   0 bei einem plausiblen Argon2id-Hash.
+#   1 bei einem ungültigen Wert.
+admin_password_hash_is_valid() {
+    local password_hash="$1"
+
+    [[ "${password_hash}" == '$argon2id$'* ]] &&
+        [[ "${password_hash}" == *'$v='* ]] &&
+        [[ "${password_hash}" == *'$m='* ]]
+}
+
 # Prüft, ob die vorhandene .env alle benötigten Werte enthält.
 #
 # Rückgabewert:
-#   0, wenn alle benötigten Variablen vorhanden sind.
+#   0, wenn alle benötigten Variablen vorhanden und gültig sind.
 #   1, wenn die Datei fehlt oder unvollständig ist.
 env_file_is_compatible() {
     local required_variables=(
@@ -232,10 +386,13 @@ env_file_is_compatible() {
         "DEVICE_REGISTRATION_TOKEN"
         "GPS_DEVICE"
         "DIALOUT_GID"
+        "RELAIS_ADMIN_PASSWORD_HASH"
+        "RELAIS_SESSION_SECURE"
     )
 
     local variable_name
     local variable_value
+    local admin_password_hash
 
     if [[ ! -s "${ENV_PATH}" ]]; then
         return 1
@@ -251,6 +408,16 @@ env_file_is_compatible() {
         fi
     done
 
+    admin_password_hash="$(
+        read_env_value \
+            "${ADMIN_PASSWORD_HASH_VARIABLE}" \
+            "${ENV_PATH}"
+    )"
+
+    if ! admin_password_hash_is_valid "${admin_password_hash}"; then
+        return 1
+    fi
+
     return 0
 }
 
@@ -261,6 +428,9 @@ env_file_is_compatible() {
 #   - Image-Version
 #   - GPS-Gerät
 #   - Registrierungs-Token
+#   - Adminpasswort für die Benutzeroberfläche
+#
+# Nur der Argon2id-Hash des Adminpassworts wird gespeichert.
 #
 # Ausgabe:
 #   Erstellt /opt/relais/.env mit Berechtigung 0600.
@@ -271,6 +441,7 @@ create_env_file() {
     local dialout_gid
     local registration_token=""
     local entered_value=""
+    local admin_password_hash=""
 
     gps_device="$(detect_gps_device)"
     dialout_gid="$(detect_dialout_gid)"
@@ -307,7 +478,8 @@ create_env_file() {
 
     echo
 
-    read -r \
+    read \
+        -r \
         -s \
         -p "DEVICE_REGISTRATION_TOKEN: " \
         registration_token
@@ -318,6 +490,19 @@ create_env_file() {
         fail "DEVICE_REGISTRATION_TOKEN darf nicht leer sein."
     fi
 
+    ensure_password_hash_dependencies
+    read_admin_password
+
+    admin_password_hash="$(
+        generate_admin_password_hash "${ADMIN_PASSWORD}"
+    )"
+
+    unset ADMIN_PASSWORD
+
+    if ! admin_password_hash_is_valid "${admin_password_hash}"; then
+        fail "Es wurde kein gültiger Argon2id-Passworthash erzeugt."
+    fi
+
     cat > "${ENV_PATH}" <<EOF
 RELAIS_IMAGE_REPOSITORY=${image_repository}
 RELAIS_VERSION=${image_version}
@@ -325,7 +510,12 @@ DEVICE_REGISTRATION_TOKEN=${registration_token}
 GPS_DEVICE=${gps_device}
 DIALOUT_GID=${dialout_gid}
 RUST_LOG=${DEFAULT_RUST_LOG}
+RELAIS_ADMIN_PASSWORD_HASH='${admin_password_hash}'
+RELAIS_SESSION_SECURE='false'
 EOF
+
+    unset registration_token
+    unset admin_password_hash
 
     chown root:root "${ENV_PATH}"
     chmod 0600 "${ENV_PATH}"
@@ -333,6 +523,9 @@ EOF
     echo
     echo "Umgebungsdatei erstellt:"
     echo "  ${ENV_PATH}"
+    echo
+    echo "Das Adminpasswort wurde eingerichtet."
+    echo "Gespeichert wurde ausschließlich der Argon2id-Hash."
 }
 
 # Erstellt eine neue .env, wenn die vorhandene Datei inkompatibel ist.
@@ -363,6 +556,8 @@ prepare_env_file() {
             "${ENV_PATH}" \
             "${backup_path}"
 
+        chmod 0600 "${backup_path}"
+
         echo "Inkompatible Umgebungsdatei wurde gesichert:"
         echo "  ${backup_path}"
     fi
@@ -373,9 +568,8 @@ prepare_env_file() {
 # Erstellt Desktop-Starter für Update, Deinstallation und
 # Konfigurationsoberfläche.
 #
-# Ausgaben:
-#   Führt das Shortcut-Skript aus, sofern ein Desktop-Benutzer ermittelt
-#   werden kann.
+# Ausgabe:
+#   Führt das Shortcut-Skript aus, sofern es vorhanden und ausführbar ist.
 create_desktop_shortcuts() {
     if [[ ! -x "${DESKTOP_SHORTCUT_SCRIPT}" ]]; then
         echo "Hinweis: Desktop-Shortcut-Skript wurde nicht gefunden."
@@ -394,7 +588,11 @@ create_desktop_shortcuts() {
 verify_gps_device() {
     local gps_device
 
-    gps_device="$(read_env_value "GPS_DEVICE" "${ENV_PATH}")"
+    gps_device="$(
+        read_env_value \
+            "GPS_DEVICE" \
+            "${ENV_PATH}"
+    )"
 
     if [[ ! -e "${gps_device}" ]]; then
         fail "GPS-Gerät existiert nicht: ${gps_device}"
@@ -402,6 +600,29 @@ verify_gps_device() {
 
     echo "GPS-Gerät:"
     echo "  ${gps_device}"
+}
+
+# Prüft, ob der Adminpasswort-Hash in der Laufzeitkonfiguration vorhanden
+# und plausibel aufgebaut ist.
+#
+# Rückgabewert:
+#   0, wenn der Hash gültig erscheint.
+#   Beendet das Skript andernfalls mit einer Fehlermeldung.
+verify_admin_password_hash() {
+    local admin_password_hash
+
+    admin_password_hash="$(
+        read_env_value \
+            "${ADMIN_PASSWORD_HASH_VARIABLE}" \
+            "${ENV_PATH}"
+    )"
+
+    if ! admin_password_hash_is_valid "${admin_password_hash}"; then
+        fail "RELAIS_ADMIN_PASSWORD_HASH fehlt oder ist ungültig."
+    fi
+
+    echo "Adminpasswort-Hash:"
+    echo "  Argon2id-Hash ist vorhanden."
 }
 
 # Prüft die Docker-Compose-Konfiguration.
@@ -464,16 +685,18 @@ show_status() {
 #   2. Verzeichnisse und Dateirechte vorbereiten
 #   3. Compose-Datei kopieren
 #   4. Konfiguration vorbereiten
-#   5. .env vorbereiten
-#   6. GPS-Gerät prüfen
+#   5. Laufzeit-.env und Adminpasswort vorbereiten
+#   6. GPS-Gerät und Passworthash prüfen
 #   7. Compose-Konfiguration validieren
 #   8. Image laden
 #   9. Container starten
+#  10. Desktop-Starter erstellen
 main() {
     require_root
     require_command "docker"
     require_command "find"
     require_command "getent"
+    require_command "apt-get"
 
     if ! docker compose version >/dev/null 2>&1; then
         fail "Docker Compose Plugin fehlt. Zuerst bootstrap.sh ausführen."
@@ -487,6 +710,7 @@ main() {
     prepare_config_file
     prepare_env_file
     verify_gps_device
+    verify_admin_password_hash
 
     echo
     echo "Docker-Compose-Konfiguration wird geprüft ..."
@@ -506,6 +730,12 @@ main() {
 
     echo
     echo "Installation abgeschlossen."
+    echo
+    echo "Benutzeroberfläche:"
+    echo "  http://localhost:8080"
+    echo
+    echo "Von einem anderen Gerät im Netzwerk:"
+    echo "  http://IP-DES-RELAIS:8080"
     echo
     echo "Status anzeigen:"
     echo "  sudo docker compose \\"

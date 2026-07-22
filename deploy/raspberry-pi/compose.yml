@@ -6,6 +6,8 @@ services:
 
     environment:
       DEVICE_REGISTRATION_TOKEN: ${DEVICE_REGISTRATION_TOKEN}
+      RELAIS_ADMIN_PASSWORD_HASH: ${RELAIS_ADMIN_PASSWORD_HASH}
+      RELAIS_SESSION_SECURE: ${RELAIS_SESSION_SECURE:-false}
       RUST_LOG: ${RUST_LOG:-info}
 
     working_dir: /app
