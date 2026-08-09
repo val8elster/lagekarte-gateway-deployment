@@ -6,7 +6,7 @@ readonly DATA_DIR="${INSTALL_DIR}/data"
 readonly ENV_PATH="${INSTALL_DIR}/.env"
 readonly COMPOSE_PATH="${INSTALL_DIR}/compose.yml"
 
-readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/relais"
+readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-relais:prod"
 
 PURGE=false
 REMOVE_IMAGES=false
