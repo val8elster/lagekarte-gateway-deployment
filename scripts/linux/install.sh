@@ -11,7 +11,7 @@ readonly CONTAINER_UID="10001"
 readonly CONTAINER_GID="10001"
 
 readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-relais"
-readonly DEFAULT_IMAGE_VERSION="dev"
+readonly DEFAULT_IMAGE_VERSION="prod"
 readonly DEFAULT_RUST_LOG="info"
 
 readonly MINIMUM_ADMIN_PASSWORD_LENGTH="12"
