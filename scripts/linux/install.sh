@@ -10,7 +10,7 @@ readonly COMPOSE_PATH="${INSTALL_DIR}/compose.yml"
 readonly CONTAINER_UID="10001"
 readonly CONTAINER_GID="10001"
 
-readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-relais:prod"
+readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-relais"
 readonly DEFAULT_IMAGE_VERSION="dev"
 readonly DEFAULT_RUST_LOG="info"
 
