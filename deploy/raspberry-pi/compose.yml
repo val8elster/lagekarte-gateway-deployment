@@ -1,13 +1,13 @@
 services:
-  relais:
-    image: ${RELAIS_IMAGE_REPOSITORY}:${RELAIS_VERSION}
-    container_name: relais
+  gateway:
+    image: ${GATEWAY_IMAGE_REPOSITORY}:${GATEWAY_VERSION}
+    container_name: gateway
     restart: unless-stopped
 
     environment:
       DEVICE_REGISTRATION_TOKEN: ${DEVICE_REGISTRATION_TOKEN}
-      RELAIS_ADMIN_PASSWORD_HASH: ${RELAIS_ADMIN_PASSWORD_HASH}
-      RELAIS_SESSION_SECURE: ${RELAIS_SESSION_SECURE:-false}
+      GATEWAY_ADMIN_PASSWORD_HASH: ${GATEWAY_ADMIN_PASSWORD_HASH}
+      GATEWAY_SESSION_SECURE: ${GATEWAY_SESSION_SECURE:-false}
       RUST_LOG: ${RUST_LOG:-info}
 
     working_dir: /app
@@ -16,8 +16,8 @@ services:
       - "8080:8080"
 
     volumes:
-      - /opt/relais/config.toml:/app/config.toml:ro
-      - /opt/relais/data:/app/data
+      - /opt/gateway/config.toml:/app/config.toml:ro
+      - /opt/gateway/data:/app/data
 
     devices:
       - ${GPS_DEVICE}:${GPS_DEVICE}

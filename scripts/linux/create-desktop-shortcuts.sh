@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly INSTALLER_DIR="/opt/relais-installer"
+readonly INSTALLER_DIR="/opt/gateway-installer"
 readonly UPDATE_SCRIPT="${INSTALLER_DIR}/scripts/linux/update.sh"
 readonly UNINSTALL_SCRIPT="${INSTALLER_DIR}/scripts/linux/uninstall.sh"
 
 readonly WEB_INTERFACE_URL="http://localhost:8080"
 
-readonly UPDATE_DESKTOP_FILENAME="relais-update.desktop"
-readonly UNINSTALL_DESKTOP_FILENAME="relais-uninstall.desktop"
-readonly WEB_DESKTOP_FILENAME="relais-configuration.desktop"
+readonly UPDATE_DESKTOP_FILENAME="gateway-update.desktop"
+readonly UNINSTALL_DESKTOP_FILENAME="gateway-uninstall.desktop"
+readonly WEB_DESKTOP_FILENAME="gateway-configuration.desktop"
 
 # Gibt eine formatierte Statusmeldung aus.
 #
@@ -201,7 +201,7 @@ prepare_directories() {
         "${home_directory}/.local/share/applications"
 }
 
-# Erstellt einen Starter zum Aktualisieren des Relais.
+# Erstellt einen Starter zum Aktualisieren des Gateway.
 #
 # Eingaben:
 #   $1: Zielpfad der Desktop-Datei
@@ -215,8 +215,8 @@ create_update_shortcut() {
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Relais aktualisieren
-Comment=Aktualisiert das Relais und startet den Container neu
+Name=Gateway aktualisieren
+Comment=Aktualisiert das Gateway und startet den Container neu
 Exec=sh -c 'sudo ${UPDATE_SCRIPT}; printf "\\nDrücke Enter zum Schließen..."; read answer'
 Icon=system-software-update
 Terminal=true
@@ -227,7 +227,7 @@ EOF
     chmod 0755 "${destination_path}"
 }
 
-# Erstellt einen Starter zum Deinstallieren des Relais.
+# Erstellt einen Starter zum Deinstallieren des Gateway.
 #
 # Eingaben:
 #   $1: Zielpfad der Desktop-Datei
@@ -241,8 +241,8 @@ create_uninstall_shortcut() {
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Relais deinstallieren
-Comment=Entfernt den Relais-Container und behält standardmäßig die Konfiguration
+Name=Gateway deinstallieren
+Comment=Entfernt den Gateway-Container und behält standardmäßig die Konfiguration
 Exec=sh -c 'sudo ${UNINSTALL_SCRIPT}; printf "\\nDrücke Enter zum Schließen..."; read answer'
 Icon=edit-delete
 Terminal=true
@@ -253,7 +253,7 @@ EOF
     chmod 0755 "${destination_path}"
 }
 
-# Erstellt einen Weblink zur Relais-Konfigurationsoberfläche.
+# Erstellt einen Weblink zur Gateway-Konfigurationsoberfläche.
 #
 # Eingaben:
 #   $1: Zielpfad der Desktop-Datei
@@ -267,8 +267,8 @@ create_web_shortcut() {
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Relais-Konfiguration
-Comment=Öffnet die lokale Konfigurationsoberfläche des Relais
+Name=Gateway-Konfiguration
+Comment=Öffnet die lokale Konfigurationsoberfläche des Gateways
 Exec=xdg-open ${WEB_INTERFACE_URL}
 Icon=preferences-system
 Terminal=false

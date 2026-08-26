@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-readonly INSTALL_DIR="/opt/relais"
+readonly INSTALL_DIR="/opt/gateway"
 readonly ENV_PATH="${INSTALL_DIR}/.env"
 readonly CONFIG_PATH="${INSTALL_DIR}/config.toml"
 readonly COMPOSE_PATH="${INSTALL_DIR}/compose.yml"
@@ -104,13 +104,13 @@ check_docker() {
 }
 
 
-# Prüft, ob eine vollständige Relais-Installation vorhanden ist.
+# Prüft, ob eine vollständige Gateway-Installation vorhanden ist.
 #
 # Ausgabe:
 #   Beendet das Skript, wenn erforderliche Dateien fehlen.
 check_installation() {
     if [[ ! -d "${INSTALL_DIR}" ]]; then
-        echo "Das Relais ist nicht unter ${INSTALL_DIR} installiert." >&2
+        echo "Das Gateway ist nicht unter ${INSTALL_DIR} installiert." >&2
         exit 1
     fi
 
@@ -129,7 +129,7 @@ check_installation() {
 # Aktualisiert die installierte Compose-Datei aus dem Repository.
 #
 # Ausgabe:
-#   Ersetzt /opt/relais/compose.yml durch die aktuelle Repository-Version.
+#   Ersetzt /opt/gateway/compose.yml durch die aktuelle Repository-Version.
 update_compose_file() {
     if [[ ! -f "${COMPOSE_SOURCE}" ]]; then
         echo "Aktuelle Compose-Datei wurde nicht gefunden:" >&2
@@ -173,7 +173,7 @@ pull_image() {
 }
 
 
-# Erstellt den Relais-Container mit dem aktuellen Image neu.
+# Erstellt den Gateway-Container mit dem aktuellen Image neu.
 #
 # Ausgabe:
 #   Startet den aktualisierten Container im Hintergrund.
@@ -201,7 +201,7 @@ prune_unused_images() {
 }
 
 
-# Zeigt den aktuellen Zustand des Relais-Containers.
+# Zeigt den aktuellen Zustand des Gateway-Containers.
 #
 # Ausgabe:
 #   Gibt die Docker-Compose-Statusübersicht aus.
@@ -215,7 +215,7 @@ show_status() {
 }
 
 
-# Führt das vollständige Relais-Update aus.
+# Führt das vollständige Gateway-Update aus.
 #
 # Ausgabe:
 #   Aktualisiert Compose-Datei und Container-Image und zeigt den Status.
@@ -235,11 +235,11 @@ main() {
     show_status
 
     echo
-    echo "Relais wurde aktualisiert."
+    echo "Gateway wurde aktualisiert."
     echo
     echo "Logs anzeigen:"
     echo "  cd ${INSTALL_DIR}"
-    echo "  sudo docker compose logs --follow relais"
+    echo "  sudo docker compose logs --follow gateway"
 }
 
 main "$@"
