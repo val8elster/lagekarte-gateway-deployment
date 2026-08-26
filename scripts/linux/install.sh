@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly INSTALL_DIR="/opt/relais"
+readonly INSTALL_DIR="/opt/gateway"
 readonly DATA_DIR="${INSTALL_DIR}/data"
 readonly CONFIG_PATH="${INSTALL_DIR}/config.toml"
 readonly ENV_PATH="${INSTALL_DIR}/.env"
@@ -10,13 +10,13 @@ readonly COMPOSE_PATH="${INSTALL_DIR}/compose.yml"
 readonly CONTAINER_UID="10001"
 readonly CONTAINER_GID="10001"
 
-readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-relais"
+readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-gateway"
 readonly DEFAULT_IMAGE_VERSION="prod"
 readonly DEFAULT_RUST_LOG="info"
 
 readonly MINIMUM_ADMIN_PASSWORD_LENGTH="12"
-readonly ADMIN_PASSWORD_HASH_VARIABLE="RELAIS_ADMIN_PASSWORD_HASH"
-readonly SESSION_SECURE_VARIABLE="RELAIS_SESSION_SECURE"
+readonly ADMIN_PASSWORD_HASH_VARIABLE="GATEWAY_ADMIN_PASSWORD_HASH"
+readonly SESSION_SECURE_VARIABLE="GATEWAY_SESSION_SECURE"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
@@ -165,8 +165,8 @@ detect_dialout_gid() {
 
 # Erstellt die Installationsverzeichnisse und setzt die Berechtigungen.
 #
-# /opt/relais bleibt root-owned.
-# /opt/relais/data gehört dem Containerbenutzer mit UID 10001.
+# /opt/gateway bleibt root-owned.
+# /opt/gateway/data gehört dem Containerbenutzer mit UID 10001.
 #
 # Ausgabe:
 #   Erstellt beziehungsweise repariert die Verzeichnisse.
@@ -201,7 +201,7 @@ prepare_directories() {
 # Kopiert die Compose-Datei in das Installationsverzeichnis.
 #
 # Ausgabe:
-#   Erstellt oder überschreibt /opt/relais/compose.yml.
+#   Erstellt oder überschreibt /opt/gateway/compose.yml.
 install_compose_file() {
     install \
         --mode 0644 \
@@ -219,7 +219,7 @@ install_compose_file() {
 # Die Datei wird root-owned, aber für den Container lesbar gesetzt.
 #
 # Ausgabe:
-#   Erstellt oder übernimmt /opt/relais/config.toml.
+#   Erstellt oder übernimmt /opt/gateway/config.toml.
 prepare_config_file() {
     if [[ -s "${CONFIG_PATH}" ]]; then
         echo "Bestehende Konfiguration wird verwendet:"
@@ -280,7 +280,7 @@ read_admin_password() {
 
     while true; do
         echo
-        echo "Adminpasswort für die Relais-Benutzeroberfläche"
+        echo "Adminpasswort für die Gateway-Benutzeroberfläche"
         echo "================================================"
         echo "Das Passwort muss mindestens ${MINIMUM_ADMIN_PASSWORD_LENGTH} Zeichen lang sein."
         echo
@@ -381,13 +381,13 @@ admin_password_hash_is_valid() {
 #   1, wenn die Datei fehlt oder unvollständig ist.
 env_file_is_compatible() {
     local required_variables=(
-        "RELAIS_IMAGE_REPOSITORY"
-        "RELAIS_VERSION"
+        "GATEWAY_IMAGE_REPOSITORY"
+        "GATEWAY_VERSION"
         "DEVICE_REGISTRATION_TOKEN"
         "GPS_DEVICE"
         "DIALOUT_GID"
-        "RELAIS_ADMIN_PASSWORD_HASH"
-        "RELAIS_SESSION_SECURE"
+        "GATEWAY_ADMIN_PASSWORD_HASH"
+        "GATEWAY_SESSION_SECURE"
     )
 
     local variable_name
@@ -433,7 +433,7 @@ env_file_is_compatible() {
 # Nur der Argon2id-Hash des Adminpassworts wird gespeichert.
 #
 # Ausgabe:
-#   Erstellt /opt/relais/.env mit Berechtigung 0600.
+#   Erstellt /opt/gateway/.env mit Berechtigung 0600.
 create_env_file() {
     local image_repository="${DEFAULT_IMAGE_REPOSITORY}"
     local image_version="${DEFAULT_IMAGE_VERSION}"
@@ -504,14 +504,14 @@ create_env_file() {
     fi
 
     cat > "${ENV_PATH}" <<EOF
-RELAIS_IMAGE_REPOSITORY=${image_repository}
-RELAIS_VERSION=${image_version}
+GATEWAY_IMAGE_REPOSITORY=${image_repository}
+GATEWAY_VERSION=${image_version}
 DEVICE_REGISTRATION_TOKEN=${registration_token}
 GPS_DEVICE=${gps_device}
 DIALOUT_GID=${dialout_gid}
 RUST_LOG=${DEFAULT_RUST_LOG}
-RELAIS_ADMIN_PASSWORD_HASH='${admin_password_hash}'
-RELAIS_SESSION_SECURE='false'
+GATEWAY_ADMIN_PASSWORD_HASH='${admin_password_hash}'
+GATEWAY_SESSION_SECURE='false'
 EOF
 
     unset registration_token
@@ -534,7 +534,7 @@ EOF
 # gesichert.
 #
 # Ausgabe:
-#   Erstellt oder übernimmt /opt/relais/.env.
+#   Erstellt oder übernimmt /opt/gateway/.env.
 prepare_env_file() {
     local backup_path
 
@@ -618,7 +618,7 @@ verify_admin_password_hash() {
     )"
 
     if ! admin_password_hash_is_valid "${admin_password_hash}"; then
-        fail "RELAIS_ADMIN_PASSWORD_HASH fehlt oder ist ungültig."
+        fail "GATEWAY_ADMIN_PASSWORD_HASH fehlt oder ist ungültig."
     fi
 
     echo "Adminpasswort-Hash:"
@@ -637,7 +637,7 @@ validate_compose_configuration() {
         --quiet
 }
 
-# Lädt das konfigurierte Relais-Image aus GHCR.
+# Lädt das konfigurierte Gateway-Image aus GHCR.
 #
 # Rückgabewert:
 #   0, wenn das Image geladen wurde.
@@ -646,13 +646,13 @@ pull_container_image() {
         --env-file "${ENV_PATH}" \
         --file "${COMPOSE_PATH}" \
         pull \
-        relais
+        gateway
 }
 
-# Startet oder aktualisiert den Relais-Container.
+# Startet oder aktualisiert den Gateway-Container.
 #
 # Der Container wird bei Bedarf neu erstellt. Persistente Dateien unter
-# /opt/relais/data bleiben erhalten.
+# /opt/gateway/data bleiben erhalten.
 #
 # Rückgabewert:
 #   0, wenn der Container erfolgreich gestartet wurde.
@@ -664,13 +664,13 @@ start_container() {
         --detach \
         --remove-orphans \
         --force-recreate \
-        relais
+        gateway
 }
 
 # Zeigt den aktuellen Compose-Status an.
 #
 # Ausgabe:
-#   Status des Relais-Containers.
+#   Status des Gateway-Containers.
 show_status() {
     docker compose \
         --env-file "${ENV_PATH}" \
@@ -678,7 +678,7 @@ show_status() {
         ps
 }
 
-# Führt die vollständige Relais-Installation aus.
+# Führt die vollständige Gateway-Installation aus.
 #
 # Ablauf:
 #   1. Voraussetzungen prüfen
@@ -719,7 +719,7 @@ main() {
     echo "Container-Image wird geladen ..."
     pull_container_image
 
-    echo "Relais-Container wird gestartet ..."
+    echo "Gateway-Container wird gestartet ..."
     start_container
 
     echo "Desktop-Shortcuts werden erstellt ..."
@@ -735,7 +735,7 @@ main() {
     echo "  http://localhost:8080"
     echo
     echo "Von einem anderen Gerät im Netzwerk:"
-    echo "  http://IP-DES-RELAIS:8080"
+    echo "  http://IP-DES-GATEWAYS:8080"
     echo
     echo "Status anzeigen:"
     echo "  sudo docker compose \\"
@@ -744,13 +744,13 @@ main() {
     echo "    ps"
     echo
     echo "Logs anzeigen:"
-    echo "  sudo docker logs --follow relais"
+    echo "  sudo docker logs --follow gateway"
     echo
     echo "Anwendung stoppen:"
     echo "  sudo docker compose \\"
     echo "    --env-file ${ENV_PATH} \\"
     echo "    --file ${COMPOSE_PATH} \\"
-    echo "    stop relais"
+    echo "    stop gateway"
 }
 
 main "$@"

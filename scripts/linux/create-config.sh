@@ -71,8 +71,8 @@ Hinweise:
 Beispiel:
 
   $0 \\
-    --config-path "/opt/relais/config.toml" \\
-    --device-name "GPS Relais Linux" \\
+    --config-path "/opt/gaetway/config.toml" \\
+    --device-name "GPS Gateway Linux" \\
     --device-uuid "a26186e1-9238-5c42-a933-3a4c69030dbd" \\
     --backend-url "https://backend.lagekarte.elster.dev" \\
     --database-path "data/positions.db"
@@ -206,7 +206,7 @@ machine_id = sys.argv[1]
 
 namespace = uuid.UUID("07f4c8d4-ef59-4dde-90ef-b9db03aa2074")
 
-print(uuid.uuid5(namespace, f"relais:{machine_id}"))
+print(uuid.uuid5(namespace, f"gateway:{machine_id}"))
 PYTHON
         return
     fi
@@ -215,7 +215,7 @@ PYTHON
         uuidgen \
             --sha1 \
             --namespace @dns \
-            --name "relais-${machine_id}"
+            --name "gateway-${machine_id}"
         return
     fi
 
@@ -228,7 +228,7 @@ PYTHON
 #
 # Ausgabe:
 #   Gibt den Hostnamen als Vorschlag zurück. Ist kein Hostname verfügbar,
-#   wird "GPS Relais Linux" zurückgegeben.
+#   wird "GPS Gateway Linux" zurückgegeben.
 default_device_name() {
     local host_name=""
 
@@ -247,9 +247,9 @@ default_device_name() {
     fi
 
     if [[ -z "${host_name}" ]]; then
-        host_name="GPS Relais Linux"
+        host_name="GPS Gateway Linux"
     else
-        host_name="GPS Relais ${host_name}"
+        host_name="GPS Gateway ${host_name}"
     fi
 
     printf '%s' "${host_name}"
@@ -610,7 +610,7 @@ select_gps_port() {
 # Schreibt die validierte Konfiguration atomar als TOML-Datei.
 #
 # Schnittstelle:
-#   Die erzeugte Datei entspricht der von relais-config erwarteten
+#   Die erzeugte Datei entspricht der von gateway-config erwarteten
 #   AppConfig-Struktur.
 #
 # Ausgabe:
@@ -707,7 +707,7 @@ EOF
 # Führt die vollständige Konfigurationserstellung aus.
 #
 # Ausgabe:
-#   Erzeugt eine validierte config.toml für das Rust-Relais.
+#   Erzeugt eine validierte config.toml für das Rust-Gateway.
 main() {
     parse_arguments "$@"
     validate_configuration

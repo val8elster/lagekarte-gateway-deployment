@@ -2,12 +2,12 @@
 set -Eeuo pipefail
 
 readonly REPOSITORY_OWNER="val8elster"
-readonly REPOSITORY_NAME="lagekarte-relais-deployment"
+readonly REPOSITORY_NAME="lagekarte-gateway-deployment"
 readonly REPOSITORY_REF="main"
 
 readonly DOWNLOAD_BASE_URL="https://raw.githubusercontent.com/${REPOSITORY_OWNER}/${REPOSITORY_NAME}/${REPOSITORY_REF}"
 
-readonly INSTALLER_DIR="/opt/relais-installer"
+readonly INSTALLER_DIR="/opt/gateway-installer"
 readonly INSTALLER_SCRIPT_DIR="${INSTALLER_DIR}/scripts/linux"
 readonly INSTALLER_DEPLOY_DIR="${INSTALLER_DIR}/deploy/raspberry-pi"
 
@@ -259,9 +259,9 @@ install_docker() {
 #
 # Ausgabe:
 #   Erstellt:
-#   - /opt/relais-installer
-#   - /opt/relais-installer/scripts/linux
-#   - /opt/relais-installer/deploy/raspberry-pi
+#   - /opt/gateway-installer
+#   - /opt/gateway-installer/scripts/linux
+#   - /opt/gateway-installer/deploy/raspberry-pi
 #
 # Rückgabewert:
 #   0 bei erfolgreicher Erstellung.
@@ -437,7 +437,7 @@ validate_downloaded_scripts() {
 # Meldet Docker optional bei GHCR an.
 #
 # Eine Anmeldung ist nur notwendig, wenn das Container-Package privat ist.
-# Das GitHub PAT wird verdeckt eingelesen und nicht in der Relais-.env
+# Das GitHub PAT wird verdeckt eingelesen und nicht in der Gateway-.env
 # gespeichert.
 #
 # Rückgabewert:
@@ -491,13 +491,13 @@ configure_ghcr_login() {
 # Führt das heruntergeladene Installationsskript aus.
 #
 # Schnittstelle:
-#   Startet /opt/relais-installer/scripts/linux/install.sh ohne
+#   Startet /opt/gateway-installer/scripts/linux/install.sh ohne
 #   zusätzliche Argumente.
 #
 # Rückgabewert:
 #   Exitcode des Installationsskripts.
 run_installation() {
-    log "Relais wird installiert"
+    log "Gateway wird installiert"
 
     "${INSTALL_SCRIPT}"
 }
@@ -512,19 +512,19 @@ show_completion_message() {
     echo "Bootstrap und Installation wurden abgeschlossen."
     echo
     echo "Laufzeitdateien:"
-    echo "  /opt/relais"
+    echo "  /opt/gateway"
     echo
     echo "Deployment-Skripte:"
     echo "  ${INSTALLER_DIR}"
     echo
     echo "Status anzeigen:"
     echo "  sudo docker compose \\"
-    echo "    --env-file /opt/relais/.env \\"
-    echo "    --file /opt/relais/compose.yml \\"
+    echo "    --env-file /opt/gateway/.env \\"
+    echo "    --file /opt/gateway/compose.yml \\"
     echo "    ps"
     echo
     echo "Logs anzeigen:"
-    echo "  sudo docker logs --follow relais"
+    echo "  sudo docker logs --follow gateway"
     echo
     echo "Update ausführen:"
     echo "  sudo ${UPDATE_SCRIPT}"

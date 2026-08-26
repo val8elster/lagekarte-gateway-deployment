@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly INSTALL_DIR="/opt/relais"
+readonly INSTALL_DIR="/opt/gateway"
 readonly DATA_DIR="${INSTALL_DIR}/data"
 readonly ENV_PATH="${INSTALL_DIR}/.env"
 readonly COMPOSE_PATH="${INSTALL_DIR}/compose.yml"
 
-readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-relais"
+readonly DEFAULT_IMAGE_REPOSITORY="ghcr.io/val8elster/lagekarte-gateway"
 
 PURGE=false
 REMOVE_IMAGES=false
@@ -37,7 +37,7 @@ Verwendung:
 Optionen:
 
   --purge
-      Löscht zusätzlich /opt/relais vollständig.
+      Löscht zusätzlich /opt/gateway vollständig.
       Dadurch werden auch folgende Daten entfernt:
 
       - config.toml
@@ -48,10 +48,10 @@ Optionen:
       - noch nicht übertragene Positionen
 
   --remove-images
-      Entfernt zusätzlich alle lokal vorhandenen Relais-Images aus GHCR.
+      Entfernt zusätzlich alle lokal vorhandenen Gateway-Images aus GHCR.
 
   --remove-source-files
-      Entfernt zusätzlich den übertragenen Ordner ~/relais des Benutzers,
+      Entfernt zusätzlich den übertragenen Ordner ~/gateway des Benutzers,
       der sudo aufgerufen hat.
 
   --all
@@ -162,7 +162,7 @@ confirm_purge() {
     fi
 }
 
-# Stoppt und entfernt den Relais-Compose-Stack.
+# Stoppt und entfernt den Gateway-Compose-Stack.
 #
 # Die Funktion verwendet bevorzugt die installierte Compose-Datei.
 # Falls diese nicht verfügbar oder fehlerhaft ist, wird der Container
@@ -171,7 +171,7 @@ confirm_purge() {
 # Rückgabewert:
 #   0 nach dem Entfernungsversuch.
 remove_compose_stack() {
-    echo "Relais-Container wird gestoppt und entfernt ..."
+    echo "Gateway-Container wird gestoppt und entfernt ..."
 
     if [[ -f "${COMPOSE_PATH}" && -f "${ENV_PATH}" ]]; then
         if docker compose \
@@ -188,25 +188,25 @@ remove_compose_stack() {
         echo "Direkte Container-Entfernung wird versucht ..."
     fi
 
-    if docker container inspect relais >/dev/null 2>&1; then
+    if docker container inspect gateway >/dev/null 2>&1; then
         docker rm \
             --force \
-            relais
+            gateway
 
-        echo "Container relais wurde direkt entfernt."
+        echo "Container gateway wurde direkt entfernt."
     else
-        echo "Kein Container namens relais vorhanden."
+        echo "Kein Container namens gateway vorhanden."
     fi
 }
 
-# Entfernt lokal gespeicherte Relais-Container-Images.
+# Entfernt lokal gespeicherte Gateway-Container-Images.
 #
 # Es werden alle Tags entfernt, deren Repository dem konfigurierten
-# Relais-Repository entspricht.
+# Gateway-Repository entspricht.
 #
 # Rückgabewert:
 #   0 nach dem Entfernungsversuch.
-remove_relais_images() {
+remove_gateway_images() {
     local images=()
 
     if [[ "${REMOVE_IMAGES}" != true ]]; then
@@ -214,7 +214,7 @@ remove_relais_images() {
     fi
 
     echo
-    echo "Lokale Relais-Images werden gesucht ..."
+    echo "Lokale Gateway-Images werden gesucht ..."
 
     mapfile -t images < <(
         docker images \
@@ -224,7 +224,7 @@ remove_relais_images() {
     )
 
     if [[ "${#images[@]}" -eq 0 ]]; then
-        echo "Keine lokalen Relais-Images gefunden."
+        echo "Keine lokalen Gateway-Images gefunden."
         return
     fi
 
@@ -236,7 +236,7 @@ remove_relais_images() {
         --force \
         "${images[@]}"
 
-    echo "Relais-Images wurden entfernt."
+    echo "Gateway-Images wurden entfernt."
 }
 
 # Entfernt das Installationsverzeichnis einschließlich persistenter Daten.
@@ -244,7 +244,7 @@ remove_relais_images() {
 # Diese Funktion wird nur ausgeführt, wenn --purge gesetzt wurde.
 #
 # Ausgabe:
-#   Löscht /opt/relais vollständig.
+#   Löscht /opt/gateway vollständig.
 remove_installation_directory() {
     if [[ "${PURGE}" != true ]]; then
         echo
@@ -289,7 +289,7 @@ get_original_user_home() {
 
 # Entfernt den übertragenen Quell- und Skriptordner aus dem Benutzer-Home.
 #
-# Standardmäßig wird ~/relais des ursprünglichen sudo-Benutzers entfernt.
+# Standardmäßig wird ~/gateway des ursprünglichen sudo-Benutzers entfernt.
 # Diese Funktion wird nur mit --remove-source-files ausgeführt.
 #
 # Rückgabewert:
@@ -310,17 +310,17 @@ remove_source_files() {
         return
     fi
 
-    source_directory="${original_home}/relais"
+    source_directory="${original_home}/gateway"
 
     if [[ ! -e "${source_directory}" ]]; then
-        echo "Kein übertragener Relais-Ordner vorhanden:"
+        echo "Kein übertragener Gateway-Ordner vorhanden:"
         echo "  ${source_directory}"
         return
     fi
 
     rm -rf -- "${source_directory}"
 
-    echo "Übertragener Relais-Ordner wurde entfernt:"
+    echo "Übertragener Gateway-Ordner wurde entfernt:"
     echo "  ${source_directory}"
 }
 
@@ -388,7 +388,7 @@ show_summary() {
 #   3. Löschung persistenter Daten bestätigen
 #   4. Container und Compose-Ressourcen entfernen
 #   5. optional Images entfernen
-#   6. optional /opt/relais entfernen
+#   6. optional /opt/gateway entfernen
 #   7. optional übertragenen Skriptordner entfernen
 #   8. optional von GHCR abmelden
 main() {
@@ -401,7 +401,7 @@ main() {
         echo "Container-Entfernung wird übersprungen."
     else
         remove_compose_stack
-        remove_relais_images
+        remove_gateway_images
         logout_from_ghcr
     fi
 
