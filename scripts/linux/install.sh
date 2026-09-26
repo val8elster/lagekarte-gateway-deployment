@@ -387,6 +387,7 @@ env_file_is_compatible() {
         "GPS_DEVICE"
         "DIALOUT_GID"
         "GATEWAY_ADMIN_PASSWORD_HASH"
+        "RELAIS_ADMIN_PASSWORD_HASH"
         "GATEWAY_SESSION_SECURE"
     )
 
@@ -511,6 +512,7 @@ GPS_DEVICE=${gps_device}
 DIALOUT_GID=${dialout_gid}
 RUST_LOG=${DEFAULT_RUST_LOG}
 GATEWAY_ADMIN_PASSWORD_HASH='${admin_password_hash}'
+RELAIS_ADMIN_PASSWORD_HASH='${admin_password_hash}'
 GATEWAY_SESSION_SECURE='false'
 EOF
 
