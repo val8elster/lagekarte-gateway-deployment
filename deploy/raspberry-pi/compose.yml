@@ -26,6 +26,8 @@ services:
     group_add:
       - "${DIALOUT_GID:-20}"
 
+    network_mode: host
+
     security_opt:
       - no-new-privileges:true
 
