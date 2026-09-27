@@ -13,6 +13,10 @@ services:
 
     working_dir: /app
 
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+
     ports:
       - "8080:8080"
 
